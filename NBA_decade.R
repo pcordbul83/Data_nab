@@ -8,6 +8,9 @@ library(tidyverse)
 library(ggplot2)
 library(lubridate)
 library(readxl)
+library(tidyr)
+library(broom)
+library(dotwhisker)
 
 
 #Create an exclusion clause
@@ -98,60 +101,59 @@ dataset_full_regular<-dataset_full_regular%>%select(var_list)
 data_set_full<-rbind(dataset_full_po,dataset_full_regular)
 
 
-#The GRAPH
-plot1<-data_set_full%>%ggplot(aes(AST,PTS,color=playoff))+geom_point()+facet_grid(name~playoff)
-
-#t test
-#selecting only variables that are interesting
-#var_interest<-c("PTS","AST","TRB","BLK","STL","TOV","playoff")
-
-#filterning by players
-LBJ_ready<-data_set_full%>%filter(name=="LBJ")
-SC_ready<-data_set_full%>%filter(name=="SC")
-
-#JH_ready<-data_set_full%>%filter(name=="JH")
-#KD_ready<-data_set_full%>%filter(name=="KD")
-
-#Ttest
-#LBJ
-LBJ_p_AST<-t.test(LBJ_ready$AST~LBJ_ready$playoff,mu=0)$p.value
-LBJ_p_PTS<-t.test(LBJ_ready$PTS~LBJ_ready$playoff,mu=0)$p.value
-LBJ_p_TRB<-t.test(LBJ_ready$TRB~LBJ_ready$playoff,mu=0)$p.value
-LBJ_p_BLK<-t.test(LBJ_ready$BLK~LBJ_ready$playoff,mu=0)$p.value
-LBJ_p_STL<-t.test(LBJ_ready$STL~LBJ_ready$playoff,mu=0)$p.value
-LBJ_p_TOV<-t.test(LBJ_ready$TOV~LBJ_ready$playoff,mu=0)$p.value
-#SC
-SC_p_AST<-t.test(SC_ready$AST~SC_ready$playoff,mu=0)$p.value
-SC_p_PTS<-t.test(SC_ready$PTS~SC_ready$playoff,mu=0)$p.value
-SC_p_TRB<-t.test(SC_ready$TRB~SC_ready$playoff,mu=0)$p.value
-SC_p_BLK<-t.test(SC_ready$BLK~SC_ready$playoff,mu=0)$p.value
-SC_p_STL<-t.test(SC_ready$STL~SC_ready$playoff,mu=0)$p.value
-SC_p_TOV<-t.test(SC_ready$TOV~SC_ready$playoff,mu=0)$p.value
-#KD
-#KD_p_AST<-t.test(KD_ready$AST~KD_ready$playoff,mu=0)$p.value
-#KD_p_PTS<-t.test(KD_ready$PTS~KD_ready$playoff,mu=0)$p.value
-#KD_p_TRB<-t.test(KD_ready$TRB~KD_ready$playoff,mu=0)$p.value
-#KD_p_BLK<-t.test(KD_ready$BLK~KD_ready$playoff,mu=0)$p.value
-#KD_p_STL<-t.test(KD_ready$STL~KD_ready$playoff,mu=0)$p.value
-#KD_p_TOV<-t.test(KD_ready$TOV~KD_ready$playoff,mu=0)$p.value
-
-#JH
-#JH_p_AST<-t.test(JH_ready$AST~JH_ready$playoff,mu=0)$p.value
-#JH_p_PTS<-t.test(JH_ready$PTS~JH_ready$playoff,mu=0)$p.value
-#JH_p_TRB<-t.test(JH_ready$TRB~JH_ready$playoff,mu=0)$p.value
-#JH_p_BLK<-t.test(JH_ready$BLK~JH_ready$playoff,mu=0)$p.value
-#JH_p_STL<-t.test(JH_ready$STL~JH_ready$playoff,mu=0)$p.value
-#JH_p_TOV<-t.test(JH_ready$TOV~JH_ready$playoff,mu=0)$p.value
+#wide_dataset#
+data_set_full<-data_set_full%>%mutate(year=format(as.Date(Date, format="%Y-%m-%d"),"%Y"))%>%
+group_by(name,year,year,Rk)%>%arrange(name,year,playoff,Rk)%>%select(name,playoff,year,Rk,PTS,AST,TRB,STL,BLK,TOV)
+data_set_full$game <- ave(data_set_full$Rk, data_set_full$year,data_set_full$name, FUN = seq_along)
+wide_data<-gather(data_set_full, stat,value, PTS:TOV, factor_key=TRUE)
 
 
+######Analysis########################
+#GRAPHIC analysis#
+#trends per player between playoff an regular#
+Plot1_off<-wide_data%>%filter(stat==c("PTS","AST","TRB"))%>%ggplot(aes(game,value))+
+geom_point(aes(color=playoff))+geom_smooth(method=lm)+facet_grid(name~stat)
 
-#creationg the table
-LBJ_p<-c("LBJ",LBJ_p_AST,LBJ_p_PTS,LBJ_p_TRB,LBJ_p_BLK,LBJ_p_STL,LBJ_p_TOV)
-SC_p<-c("SC",SC_p_AST,SC_p_PTS,SC_p_TRB,SC_p_BLK,SC_p_STL,SC_p_TOV)
-headers<-c("name","AST","PTS","TRB","BLK","STL","TOV")
-p_value_set<-rbind(LBJ_p,SC_p)
-colnames(p_value_set)<-headers
+Plot1_def<-wide_data%>%filter(stat==c("STL","BLK","TOV"))%>%ggplot(aes(game,value))+
+  geom_point(aes(color=playoff))+geom_smooth(method=lm)+facet_grid(name~stat)
+
+####Basic Regression to see if effect#####
+reg_1<-data_set_full%>%group_by(name)%>%do(model = lm(playoff ~ PTS+AST+TRB+STL+BLK+TOV, data = .))
+coeff_1<-reg_1%>%tidy(model)
+
+#####t-test#####
+####LBJ####
+LBJ_data<-data_set_full%>%filter(name=="LBJ")
+LBJ_PTS<-tidy(lm(PTS~playoff,data=LBJ_data))
+LBJ_AST<-tidy(lm(AST~playoff,data=LBJ_data))
+LBJ_TRB<-tidy(lm(TRB~playoff,data=LBJ_data))
+LBJ_BLK<-tidy(lm(BLK~playoff,data=LBJ_data))
+LBJ_STL<-tidy(lm(STL~playoff,data=LBJ_data))
+LBJ_TOV<-tidy(lm(TOV~playoff,data=LBJ_data))
+
+LBJ_ttest<-rbind(LBJ_PTS,LBJ_AST,LBJ_TRB,LBJ_BLK,LBJ_STL,LBJ_TOV)
+row_names<-c("PTS","AST","TRB","BLK","STL","TOV")
+LBJ_ttest<-LBJ_ttest%>%filter(term=="playoff")%>%mutate(player="LBJ",STAT=row_names)
+
+####SC#####
+SC_data<-data_set_full%>%filter(name=="SC")
+SC_PTS<-tidy(lm(PTS~playoff,data=SC_data))
+SC_AST<-tidy(lm(AST~playoff,data=SC_data))
+SC_TRB<-tidy(lm(TRB~playoff,data=SC_data))
+SC_BLK<-tidy(lm(BLK~playoff,data=SC_data))
+SC_STL<-tidy(lm(STL~playoff,data=SC_data))
+SC_TOV<-tidy(lm(TOV~playoff,data=SC_data))
+
+SC_ttest<-rbind(SC_PTS,SC_AST,SC_TRB,SC_BLK,SC_STL,SC_TOV)
+SC_ttest<-SC_ttest%>%filter(term=="playoff")%>%mutate(player="SC",STAT=row_names)
+
+####combining the data sets#####
+TTEST_all<-rbind(LBJ_ttest,SC_ttest)%>%select(player,STAT,estimate,std.error,statistic,p.value)%>%
+  mutate(upper=estimate+std.error,lower=estimate-std.error)
+
+Ttest_plot<-TTEST_all%>%ggplot()+geom_pointrange(data=TTEST_all,x=TTEST_all$STAT,y=TTEST_all$estimate,ymin=TTEST_all$lower,ymax=TTEST_all$upper)
+
+#geom_hline(yintercept=0, linetype="dashed", color = "red")
 
 #exporting the data
-write.xlsx(p_value_set,"pvalues.xlsx")
-write.table(data_set_full, "~/Decade/mydata.txt", sep="\t")
+write.csv(TTEST_all, "ttest.txt",row.names = FALSE)
